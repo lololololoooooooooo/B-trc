@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Battery Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
+  </head>
+  <body>
+    <div id="map" style="height:100vh"></div>
+    <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
+    <script type="module">
+      const map = L.map('map').setView([0,0], 2);
+      L.tileLayer('https://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
+
+      async function refresh() {
+        const res = await fetch('/.netlify/functions/latest');
+        const rows = await res.json();
+        map.eachLayer(l => l instanceof L.Marker && map.removeLayer(l));
+        rows.forEach(r => {
+          const p = r.data;
+          L.marker([p.lat, p.lon])
+            .addTo(map)
+            .bindPopup(`${p.device_id}<br>${p.soc}%<br>${p.v} V`);
+        });
+      }
+      refresh();
+      setInterval(refresh, 15000);
+    </script>
+  </body>
+</html>

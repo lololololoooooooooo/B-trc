@@ -1,29 +1,101 @@
 <!doctype html>
-<html>
-  <head>
-    <title>Battery Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css">
-  </head>
-  <body>
-    <div id="map" style="height:100vh"></div>
-    <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
-    <script type="module">
-      const map = L.map('map').setView([0,0], 2);
-      L.tileLayer('https://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>IoT Battery Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9/dist/leaflet.css"/>
+  <style>
+    /* ---- Layout ---- */
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #sidebar{
+      width:280px;
+      height:100vh;
+      overflow-y:auto;
+      background:#f7f7f7;
+      border-right:1px solid #ddd;
+      padding:12px;
+      box-sizing:border-box;
+    }
+    #map{height:100vh;margin-left:280px}
+    .device-card{
+      border:1px solid #ccc;
+      border-radius:6px;
+      padding:8px 10px;
+      margin-bottom:8px;
+      background:#fff;
+      cursor:pointer;
+    }
+    .device-card h4{margin:0 0 4px}
+    .device-card p{margin:2px 0;font-size:.85rem}
+    .highlight{background:#e6ffe6;border-color:#2e7d32}
+  </style>
+</head>
+<body>
 
-      async function refresh() {
-        const res = await fetch('/.netlify/functions/latest');
-        const rows = await res.json();
-        map.eachLayer(l => l instanceof L.Marker && map.removeLayer(l));
-        rows.forEach(r => {
-          const p = r.data;
-          L.marker([p.lat, p.lon])
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h2>Devices</h2>
+    <div id="deviceList">Loading…</div>
+  </div>
+
+  <!-- Map -->
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
+
+    const markers = {};          // device_id → marker
+    const cards   = {};          // device_id → card DOM node
+
+    async function refresh() {
+      const res  = await fetch('/.netlify/functions/latest');
+      const rows = await res.json();          // newest first
+      const list = document.getElementById('deviceList');
+      list.innerHTML = '';                   // clear old list
+
+      rows.forEach(r => {
+        const d = r.data || r;               // handle both KV & Fauna shapes
+        if (!markers[d.device_id]) {
+          // create marker
+          markers[d.device_id] = L.marker([d.lat, d.lon])
             .addTo(map)
-            .bindPopup(`${p.device_id}<br>${p.soc}%<br>${p.v} V`);
-        });
-      }
-      refresh();
-      setInterval(refresh, 15000);
-    </script>
-  </body>
+            .bindPopup(`${d.device_id}<br>${d.soc}%<br>${d.v} V`);
+          // create card
+          const card = document.createElement('div');
+          card.className = 'device-card';
+          card.id        = `card-${d.device_id}`;
+          card.innerHTML = `
+            <h4>${d.device_id}</h4>
+            <p><strong>SOC:</strong> ${d.soc}%</p>
+            <p><strong>Voltage:</strong> ${d.v} V</p>
+            <p><strong>Temp:</strong> ${d.t} °C</p>
+            <p><em>Last seen: ${new Date(d.ts*1000).toLocaleTimeString()}</em></p>
+          `;
+          card.onclick = () => {
+            map.setView([d.lat, d.lon], 13);
+            markers[d.device_id].openPopup();
+            // highlight card
+            Object.values(cards).forEach(c => c.classList.remove('highlight'));
+            card.classList.add('highlight');
+          };
+          list.appendChild(card);
+          cards[d.device_id] = card;
+        } else {
+          // update marker & card
+          markers[d.device_id].setLatLng([d.lat, d.lon]);
+          const c = cards[d.device_id];
+          c.querySelector('p:nth-of-type(1)').textContent = `SOC: ${d.soc}%`;
+          c.querySelector('p:nth-of-type(2)').textContent = `Voltage: ${d.v} V`;
+          c.querySelector('p:nth-of-type(3)').textContent = `Temp: ${d.t} °C`;
+          c.querySelector('em').textContent = `Last seen: ${new Date(d.ts*1000).toLocaleTimeString()}`;
+        }
+      });
+    }
+
+    refresh();
+    setInterval(refresh, 15000);   // auto-refresh every 15 s
+  </script>
+</body>
 </html>

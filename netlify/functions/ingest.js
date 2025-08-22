@@ -1,5 +1,5 @@
 // netlify/functions/ingest.js
-const { Client } = require('pg');
+const faunadb = require('faunadb');
 
 exports.handler = async (event) => {
     const cors = {
@@ -29,43 +29,47 @@ exports.handler = async (event) => {
     if (!body.ts) body.ts = Date.now();
     
     try {
-        // Connect to PostgreSQL database
-        const client = new Client({
-            connectionString: process.env.DATABASE_URL
-        });
+        // Connect to FaunaDB (Netlify's recommended database)
+        const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET });
         
-        await client.connect();
-        
-        // Create table if it doesn't exist
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS devices (
-                id VARCHAR(255) PRIMARY KEY,
-                v FLOAT,
-                t FLOAT,
-                soc INTEGER,
-                lat FLOAT,
-                lon FLOAT,
-                ts BIGINT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        // Create or update device
+        const result = await client.query(
+            faunadb.query.Let(
+                {
+                    match: faunadb.query.Match(
+                        faunadb.query.Index('device_by_id'), 
+                        body.id
+                    ),
+                    device: faunadb.query.If(
+                        faunadb.query.Exists(faunadb.query.Var('match')),
+                        faunadb.query.Get(faunadb.query.Var('match')),
+                        null
+                    )
+                },
+                faunadb.query.If(
+                    faunadb.query.Var('device'),
+                    faunadb.query.Update(
+                        faunadb.query.Select(['ref'], faunadb.query.Var('device')), 
+                        {
+                            data: {
+                                ...body,
+                                updatedAt: Date.now()
+                            }
+                        }
+                    ),
+                    faunadb.query.Create(
+                        faunadb.query.Collection('devices'), 
+                        {
+                            data: {
+                                ...body,
+                                createdAt: Date.now(),
+                                updatedAt: Date.now()
+                            }
+                        }
+                    )
+                )
             )
-        `);
-        
-        // Insert or update device data
-        await client.query(`
-            INSERT INTO devices (id, v, t, soc, lat, lon, ts, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-            ON CONFLICT (id) DO UPDATE SET
-                v = EXCLUDED.v,
-                t = EXCLUDED.t,
-                soc = EXCLUDED.soc,
-                lat = EXCLUDED.lat,
-                lon = EXCLUDED.lon,
-                ts = EXCLUDED.ts,
-                updated_at = CURRENT_TIMESTAMP
-        `, [body.id, body.v, body.t, body.soc, body.lat, body.lon, body.ts]);
-        
-        await client.end();
+        );
         
         console.log('Device stored in database:', body.id);
         return { statusCode: 200, headers: cors, body: 'OK' };

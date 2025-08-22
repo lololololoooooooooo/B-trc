@@ -1,37 +1,24 @@
-// 1-line install: npm i faunadb  (but we bundle it in the function)
-const faunadb = require('faunadb');
-const q = faunadb.query;
-const client = new faunadb.Client({ secret: process.env.FAUNA_SERVER_KEY });
-
+// netlify/functions/ingest.js
 exports.handler = async (event, context) => {
-  // CORS so browser can call it too
+  const KV = context.clientContext?.custom?.KV;  // Netlify KV (beta) or use env KV_REST_TOKEN
   const cors = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
+  if (event.httpMethod === 'OPTIONS')
+    return { statusCode: 200, headers: cors, body: '' };
 
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: cors, body: '' };
-
-  // 1) Token check
-  const token = event.headers['x-device-token'];
+  const token = event.headers['x-device-token'] || event.headers['X-Device-Token'];
   if (token !== process.env.DEVICE_TOKEN)
-    return { statusCode: 401, body: 'Unauthorized' };
+    return { statusCode: 401, body: 'Unauthorized', headers: cors };
 
-  // 2) Parse payload
   const body = JSON.parse(event.body);
-  const doc = {
-    device_id: body.id,
-    v: body.v,
-    t: body.t,
-    soc: body.soc,
-    lat: body.lat,
-    lon: body.lon,
-    ts: body.ts || Date.now(),
-  };
+  const id = body.id || 'unknown';
+  const ts = Date.now();
 
-  // 3) Save to Fauna
-  await client.query(q.Create(q.Collection('telemetry'), { data: doc }));
+  // Store in Netlify KV (or just echo for now)
+  console.log(JSON.stringify({ ...body, ts }));
 
   return { statusCode: 200, headers: cors, body: 'OK' };
 };

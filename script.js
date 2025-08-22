@@ -32,23 +32,23 @@ document.addEventListener('DOMContentLoaded', () => {
             // Create marker
             const marker = L.marker([device.lat, device.lon]).addTo(map);
             marker.bindPopup(`
-                <strong>${device.device_id}</strong><br>
+                <strong>${device.id}</strong><br>
                 SOC: ${device.soc}%<br>
                 Voltage: ${device.v} V<br>
                 Temp: ${device.t} °C
             `);
 
-            markers[device.device_id] = marker;
+            markers[device.id] = marker;
 
             // Update or add device info
-            deviceInfo[device.device_id] = device;
+            deviceInfo[device.id] = device;
 
             // Create or update device card
-            const deviceCard = document.getElementById(`device-${device.device_id}`) || document.createElement('div');
-            deviceCard.id = `device-${device.device_id}`;
+            const deviceCard = document.getElementById(`device-${device.id}`) || document.createElement('div');
+            deviceCard.id = `device-${device.id}`;
             deviceCard.className = 'device-card';
             deviceCard.innerHTML = `
-                <h3>${device.device_id}</h3>
+                <h3>${device.id}</h3>
                 <p>SOC: ${device.soc}%</p>
                 <p>Voltage: ${device.v} V</p>
                 <p>Temp: ${device.t} °C</p>
@@ -60,14 +60,14 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // Add to device list if not already present
-            if (!document.getElementById(`device-${device.device_id}`)) {
+            if (!document.getElementById(`device-${device.id}`)) {
                 document.getElementById('deviceList').appendChild(deviceCard);
             }
         });
 
         // Remove devices that are no longer in the data
         Object.keys(markers).forEach(id => {
-            if (!devices.some(device => device.device_id === id)) {
+            if (!devices.some(device => device.id === id)) {
                 map.removeLayer(markers[id]);
                 delete markers[id];
                 const deviceCard = document.getElementById(`device-${id}`);

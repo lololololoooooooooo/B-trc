@@ -1,29 +1,28 @@
 // netlify/functions/latest.js
-const { Client } = require('pg');
+const faunadb = require('faunadb');
 
 exports.handler = async () => {
     try {
-        // Connect to PostgreSQL database
-        const client = new Client({
-            connectionString: process.env.DATABASE_URL
-        });
+        // Connect to FaunaDB
+        const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET });
         
-        await client.connect();
+        const devices = await client.query(
+            faunadb.query.Map(
+                faunadb.query.Paginate(
+                    faunadb.query.Documents(faunadb.query.Collection('devices'))
+                ),
+                faunadb.query.Lambda('ref', faunadb.query.Get(faunadb.query.Var('ref')))
+            )
+        );
         
-        // Get all devices
-        const result = await client.query(`
-            SELECT id, v, t, soc, lat, lon, ts, updated_at
-            FROM devices
-            ORDER BY updated_at DESC
-        `);
+        // Extract just the data from each document
+        const deviceData = devices.data.map(device => device.data);
         
-        await client.end();
-        
-        console.log('Returning', result.rows.length, 'devices from database');
+        console.log('Returning', deviceData.length, 'devices from database');
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(result.rows),
+            body: JSON.stringify(deviceData),
         };
         
     } catch (error) {

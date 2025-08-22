@@ -1,5 +1,6 @@
 // netlify/functions/ingest.js
-const store = global.store || new Map();   // shared memory
+global.store = global.store || new Map();   // share across functions
+const store = global.store;
 
 exports.handler = async (event) => {
   const cors = {
@@ -25,10 +26,9 @@ exports.handler = async (event) => {
   // Add timestamp if missing
   if (!body.ts) body.ts = Date.now();
 
-  // Save in shared memory
+  // Store in memory
   store.set(body.id || 'unknown', body);
-
   console.log('stored', body);
-  global.store = store;    // make sure both functions use the same store
+
   return { statusCode: 200, headers: cors, body: 'OK' };
 };

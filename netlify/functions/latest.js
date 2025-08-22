@@ -1,5 +1,6 @@
 // netlify/functions/latest.js
-const store = new Map();   // same memory
+// Must use the same store object as ingest.js
+const store = global.store || new Map();
 
 exports.handler = async () => {
   const devices = Array.from(store.values());

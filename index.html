@@ -1,4 +1,25 @@
-<!doctype html>
-<title>Battery Tracker</title>
-<h1>🚧 Battery Tracker is live</h1>
-<a href="/map.html">Open Map</a>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Battery Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>Devices</h2>
+            <div id="deviceList" class="device-list">
+                <!-- Devices will be listed here -->
+            </div>
+        </div>
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

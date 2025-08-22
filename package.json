@@ -1,0 +1,16 @@
+{
+  "name": "iot-battery-tracker",
+  "version": "1.0.0",
+  "description": "IoT Battery Tracker with Netlify Functions",
+  "main": "index.html",
+  "scripts": {
+    "build": "echo 'No build step needed'",
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}

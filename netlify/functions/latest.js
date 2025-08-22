@@ -1,11 +1,8 @@
 // netlify/functions/latest.js
+const store = new Map();   // same memory
+
 exports.handler = async () => {
-  const { KV } = require('@netlify/kv');
-  const kv = new KV();
-  const keys = await kv.list({ prefix: 'device:' });
-  const devices = await Promise.all(
-    keys.map(k => kv.get(k).then(v => JSON.parse(v || '{}')))
-  );
+  const devices = Array.from(store.values());
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },

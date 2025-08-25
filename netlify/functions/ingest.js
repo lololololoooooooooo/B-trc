@@ -2,8 +2,8 @@
 const { Client } = require('pg');
 
 async function ensureSchema(client) {
-    // Core devices table and indexes
-    const ddl = `
+    // Ensure base table exists
+    const ddlBase = `
         CREATE TABLE IF NOT EXISTS devices (
             id SERIAL PRIMARY KEY,
             device_id VARCHAR(255) UNIQUE NOT NULL,
@@ -14,18 +14,28 @@ async function ensureSchema(client) {
             t DECIMAL(5, 2),
             ts BIGINT NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            owner_user_id UUID,
-            api_token_hash TEXT,
-            name TEXT
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
+    `;
+    await client.query(ddlBase);
+
+    // Backfill missing columns (for upgrades from older schema)
+    const alters = `
+        ALTER TABLE devices ADD COLUMN IF NOT EXISTS owner_user_id UUID;
+        ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_token_hash TEXT;
+        ALTER TABLE devices ADD COLUMN IF NOT EXISTS name TEXT;
+    `;
+    await client.query(alters);
+
+    // Indexes
+    const idx = `
         CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);
         CREATE INDEX IF NOT EXISTS idx_devices_owner ON devices(owner_user_id);
         CREATE INDEX IF NOT EXISTS idx_devices_ts ON devices(ts);
         CREATE INDEX IF NOT EXISTS idx_devices_location ON devices(lat, lon);
     `;
-    await client.query(ddl);
-    
+    await client.query(idx);
+
     // Users and mapping (for future auth features)
     const ddlUsers = `
         CREATE TABLE IF NOT EXISTS users (

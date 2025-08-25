@@ -31,6 +31,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error fetching device data:', error);
             debugLog('Fetch error', error);
+            
+            // Show error in device list
+            const deviceList = document.getElementById('deviceList');
+            if (deviceList) {
+                deviceList.innerHTML = `<p style="color: red;">Error loading devices: ${error.message}</p>`;
+            }
+            
+            // Retry after 5 seconds
             setTimeout(fetchDevices, 5000);
         }
     }
@@ -41,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Clear old markers
         Object.values(markers).forEach(marker => map.removeLayer(marker));
+        markers = {}; // Reset markers object
         
         // Update device list container
         const deviceList = document.getElementById('deviceList');
@@ -62,41 +71,44 @@ document.addEventListener('DOMContentLoaded', () => {
         devices.forEach(device => {
             debugLog('Processing device', device);
             
-            // Ensure device has required fields
-            if (!device.id || !device.lat || !device.lon) {
-                console.warn('Device missing required fields:', device);
+            // Handle both data structures (direct or nested in data property)
+            const deviceData = device.data || device;
+            
+            // Ensure device has required fields - use device_id as primary identifier
+            if (!deviceData.device_id || !deviceData.lat || !deviceData.lon) {
+                console.warn('Device missing required fields:', deviceData);
                 return;
             }
             
             // Create marker
-            const marker = L.marker([device.lat, device.lon]).addTo(map);
+            const marker = L.marker([deviceData.lat, deviceData.lon]).addTo(map);
             marker.bindPopup(`
-                <strong>${device.id}</strong><br>
-                SOC: ${device.soc || 'N/A'}%<br>
-                Voltage: ${device.v || 'N/A'} V<br>
-                Temp: ${device.t || 'N/A'} °C
+                <strong>${deviceData.device_id}</strong><br>
+                SOC: ${deviceData.soc || 'N/A'}%<br>
+                Voltage: ${deviceData.v || 'N/A'} V<br>
+                Temp: ${deviceData.t || 'N/A'} °C
             `);
-            markers[device.id] = marker;
+            markers[deviceData.device_id] = marker;
             
             // Update device info
-            deviceInfo[device.id] = device;
+            deviceInfo[deviceData.device_id] = deviceData;
             
             // Create device card
             const deviceCard = document.createElement('div');
-            deviceCard.id = `device-${device.id}`;
+            deviceCard.id = `device-${deviceData.device_id}`;
             deviceCard.className = 'device-card';
             deviceCard.innerHTML = `
-                <h3>${device.id}</h3>
-                <p><strong>SOC:</strong> ${device.soc || 'N/A'}%</p>
-                <p><strong>Voltage:</strong> ${device.v || 'N/A'} V</p>
-                <p><strong>Temp:</strong> ${device.t || 'N/A'} °C</p>
-                <p><strong>Location:</strong> ${device.lat}, ${device.lon}</p>
-                <p><em>Last Updated: ${new Date(device.ts || Date.now()).toLocaleString()}</em></p>
+                <h3>${deviceData.device_id}</h3>
+                <p><strong>SOC:</strong> ${deviceData.soc || 'N/A'}%</p>
+                <p><strong>Voltage:</strong> ${deviceData.v || 'N/A'} V</p>
+                <p><strong>Temp:</strong> ${deviceData.t || 'N/A'} °C</p>
+                <p><strong>Location:</strong> ${deviceData.lat}, ${deviceData.lon}</p>
+                <p><em>Last Updated: ${new Date(deviceData.ts * 1000 || Date.now()).toLocaleString()}</em></p>
             `;
             
             // Add click handler
             deviceCard.onclick = () => {
-                map.setView([device.lat, device.lon], 13);
+                map.setView([deviceData.lat, deviceData.lon], 13);
                 marker.openPopup();
                 
                 // Highlight selected card
@@ -111,7 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         debugLog('Updated map and list with', devices.length, 'devices');
-        setTimeout(fetchDevices, 15000); // Refresh every 15 seconds
     }
     
     // Test function to verify database connection
@@ -138,7 +149,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(testData)
             });
             
-            const result = await response.text();
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
             debugLog('Test ingest result', result);
             
             // Wait a moment then fetch latest data
@@ -153,6 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Start fetching data
     fetchDevices();
+    
+    // Set up periodic refresh
+    setInterval(fetchDevices, 15000); // Refresh every 15 seconds
     
     // Uncomment to test database connection
     // testDatabase();

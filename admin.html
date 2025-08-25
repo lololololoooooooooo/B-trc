@@ -8,15 +8,22 @@
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px}
     fieldset{margin-bottom:18px;padding:12px}
     label{display:block;margin:.35rem 0 .2rem}
-    input{width:320px;max-width:95%;padding:8px}
+    input,textarea{width:420px;max-width:95%;padding:8px}
     button{margin-top:10px;padding:8px 12px}
     .row{display:flex;gap:28px;flex-wrap:wrap}
-    .card{border:1px solid #ddd;border-radius:8px;padding:12px}
+    .card{border:1px solid #ddd;border-radius:8px;padding:12px;flex:1;min-width:280px}
     code{background:#f6f8fa;padding:2px 4px;border-radius:4px}
     .ok{color:#2e7d32}.err{color:#b00020}
+    textarea{height:84px}
+    nav a{margin-right:12px}
   </style>
 </head>
 <body>
+  <nav>
+    <a href="/index.html">Home</a>
+    <a href="/map.html">Map</a>
+    <a href="/admin.html">Admin</a>
+  </nav>
   <h1>Admin</h1>
   <p>Use your <code>ADMIN_TOKEN</code> for admin APIs. Use <code>auth-login</code> to get a user JWT.</p>
 
@@ -30,7 +37,7 @@
       <button onclick="login()">Login</button>
       <div id="loginMsg"></div>
       <p>JWT (copy to test user routes):</p>
-      <textarea id="jwt" rows="4" cols="60" readonly></textarea>
+      <textarea id="jwt" readonly></textarea>
     </div>
 
     <div class="card">
@@ -57,6 +64,24 @@
       <input id="aDev" placeholder="batt-001"/>
       <button onclick="assignDevice()">Assign</button>
       <div id="assignMsg"></div>
+    </div>
+
+    <div class="card">
+      <h3>Create Device + PowerShell command</h3>
+      <label>Admin Token</label>
+      <input id="admTok3" placeholder="ADMIN_TOKEN"/>
+      <label>Device ID</label>
+      <input id="cDev" placeholder="batt-005"/>
+      <label>Name (optional)</label>
+      <input id="cName" placeholder="My Pack"/>
+      <label>Lat (optional)</label>
+      <input id="cLat" type="number" step="0.00000001" placeholder="0"/>
+      <label>Lon (optional)</label>
+      <input id="cLon" type="number" step="0.00000001" placeholder="0"/>
+      <button onclick="createDevice()">Create</button>
+      <div id="createMsg"></div>
+      <p>PowerShell one‑liner:</p>
+      <textarea id="psCmd" readonly></textarea>
     </div>
   </div>
 
@@ -99,6 +124,26 @@
         const data = await res.json();
         if(!res.ok){ msg.innerHTML = '<span class="err">'+(data.error||'Error')+'</span>'; return; }
         msg.innerHTML = '<span class="ok">Assigned</span>';
+      }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
+    }
+    async function createDevice(){
+      const token = document.getElementById('admTok3').value.trim();
+      const device_id = document.getElementById('cDev').value.trim();
+      const name = document.getElementById('cName').value.trim();
+      const lat = document.getElementById('cLat').value;
+      const lon = document.getElementById('cLon').value;
+      const msg = document.getElementById('createMsg');
+      msg.textContent = '';
+      try{
+        const body = { device_id };
+        if(name) body.name = name;
+        if(lat) body.lat = parseFloat(lat);
+        if(lon) body.lon = parseFloat(lon);
+        const res = await fetch('/.netlify/functions/admin-create-device',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':token},body:JSON.stringify(body)});
+        const data = await res.json();
+        if(!res.ok){ msg.innerHTML = '<span class="err">'+(data.error||'Error')+'</span>'; return; }
+        document.getElementById('psCmd').value = data.powershell || '';
+        msg.innerHTML = '<span class="ok">Device ready: '+data.device_id+'</span>';
       }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
     }
   </script>

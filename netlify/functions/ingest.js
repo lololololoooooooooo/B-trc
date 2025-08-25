@@ -1,5 +1,5 @@
 // netlify/functions/ingest.js
-const faunadb = require('faunadb');
+const { Client } = require('pg');
 
 exports.handler = async (event) => {
     const cors = {
@@ -22,8 +22,8 @@ exports.handler = async (event) => {
         };
     }
     
-    if (!process.env.FAUNA_SECRET) {
-        console.error('FAUNA_SECRET environment variable not set');
+    if (!process.env.NETLIFY_DATABASE_URL) {
+        console.error('NETLIFY_DATABASE_URL environment variable not set');
         return { 
             statusCode: 500, 
             headers: cors, 
@@ -62,50 +62,39 @@ exports.handler = async (event) => {
     }
     
     // Add timestamp if missing
-    if (!body.ts) body.ts = Date.now();
+    if (!body.ts) body.ts = Math.floor(Date.now() / 1000); // Convert to Unix timestamp
     
     try {
-        // Connect to FaunaDB (Netlify's recommended database)
-        const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET });
+        // Connect to PostgreSQL
+        const client = new Client({
+            connectionString: process.env.NETLIFY_DATABASE_URL,
+            ssl: { rejectUnauthorized: false }
+        });
         
-        // Create or update device
-        const result = await client.query(
-            faunadb.query.Let(
-                {
-                    match: faunadb.query.Match(
-                        faunadb.query.Index('device_by_id'), 
-                        body.id
-                    ),
-                    device: faunadb.query.If(
-                        faunadb.query.Exists(faunadb.query.Var('match')),
-                        faunadb.query.Get(faunadb.query.Var('match')),
-                        null
-                    )
-                },
-                faunadb.query.If(
-                    faunadb.query.Var('device'),
-                    faunadb.query.Update(
-                        faunadb.query.Select(['ref'], faunadb.query.Var('device')), 
-                        {
-                            data: {
-                                ...body,
-                                updatedAt: Date.now()
-                            }
-                        }
-                    ),
-                    faunadb.query.Create(
-                        faunadb.query.Collection('devices'), 
-                        {
-                            data: {
-                                ...body,
-                                createdAt: Date.now(),
-                                updatedAt: Date.now()
-                            }
-                        }
-                    )
-                )
-            )
+        await client.connect();
+        
+        // Check if device exists and update or create
+        const checkResult = await client.query(
+            'SELECT id FROM devices WHERE device_id = $1',
+            [body.id]
         );
+        
+        if (checkResult.rows.length > 0) {
+            // Update existing device
+            await client.query(`
+                UPDATE devices 
+                SET lat = $1, lon = $2, soc = $3, v = $4, t = $5, ts = $6, updated_at = NOW()
+                WHERE device_id = $7
+            `, [body.lat, body.lon, body.soc, body.v, body.t, body.ts, body.id]);
+        } else {
+            // Create new device
+            await client.query(`
+                INSERT INTO devices (device_id, lat, lon, soc, v, t, ts, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+            `, [body.id, body.lat, body.lon, body.soc, body.v, body.t, body.ts]);
+        }
+        
+        await client.end();
         
         console.log('Device stored in database:', body.id);
         return { 

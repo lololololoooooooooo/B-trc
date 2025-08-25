@@ -8,7 +8,7 @@
     "dev": "netlify dev"
   },
   "dependencies": {
-    "@netlify/neon": "^1.0.0"
+    "pg": "^8.11.3"
   },
   "devDependencies": {
     "netlify-cli": "^17.0.0"

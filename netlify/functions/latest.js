@@ -1,8 +1,29 @@
 // netlify/functions/latest.js
 const faunadb = require('faunadb');
 
-exports.handler = async () => {
+exports.handler = async (event) => {
+    const cors = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    };
+    
+    // CORS pre-flight
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers: cors, body: '' };
+    }
+    
     try {
+        // Check if FAUNA_SECRET is available
+        if (!process.env.FAUNA_SECRET) {
+            console.error('FAUNA_SECRET environment variable not set');
+            return {
+                statusCode: 500,
+                headers: { ...cors, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Database configuration error' }),
+            };
+        }
+        
         // Connect to FaunaDB
         const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET });
         
@@ -21,7 +42,7 @@ exports.handler = async () => {
         console.log('Returning', deviceData.length, 'devices from database');
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...cors, 'Content-Type': 'application/json' },
             body: JSON.stringify(deviceData),
         };
         
@@ -29,8 +50,8 @@ exports.handler = async () => {
         console.error('Database error:', error);
         return {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Database error' }),
+            headers: { ...cors, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'Database error', details: error.message }),
         };
     }
 };

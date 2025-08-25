@@ -1,7 +1,7 @@
 // netlify/functions/ingest.js
-import { neon } from '@netlify/neon';
+const { Client } = require('pg');
 
-export const handler = async (event) => {
+exports.handler = async (event) => {
     const cors = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token',
@@ -19,6 +19,15 @@ export const handler = async (event) => {
             statusCode: 500, 
             headers: cors, 
             body: JSON.stringify({ error: 'Server configuration error' }) 
+        };
+    }
+    
+    if (!process.env.NETLIFY_DATABASE_URL) {
+        console.error('NETLIFY_DATABASE_URL environment variable not set');
+        return { 
+            statusCode: 500, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Database configuration error' }) 
         };
     }
     
@@ -56,29 +65,36 @@ export const handler = async (event) => {
     if (!body.ts) body.ts = Math.floor(Date.now() / 1000); // Convert to Unix timestamp
     
     try {
-        // Connect to Neon database (automatically uses NETLIFY_DATABASE_URL)
-        const sql = neon();
+        // Connect to PostgreSQL
+        const client = new Client({
+            connectionString: process.env.NETLIFY_DATABASE_URL,
+            ssl: { rejectUnauthorized: false }
+        });
+        
+        await client.connect();
         
         // Check if device exists and update or create
-        const existingDevice = await sql`
-            SELECT id FROM devices WHERE device_id = ${body.id}
-        `;
+        const checkResult = await client.query(
+            'SELECT id FROM devices WHERE device_id = $1',
+            [body.id]
+        );
         
-        if (existingDevice.length > 0) {
+        if (checkResult.rows.length > 0) {
             // Update existing device
-            await sql`
+            await client.query(`
                 UPDATE devices 
-                SET lat = ${body.lat}, lon = ${body.lon}, soc = ${body.soc}, 
-                    v = ${body.v}, t = ${body.t}, ts = ${body.ts}, updated_at = NOW()
-                WHERE device_id = ${body.id}
-            `;
+                SET lat = $1, lon = $2, soc = $3, v = $4, t = $5, ts = $6, updated_at = NOW()
+                WHERE device_id = $7
+            `, [body.lat, body.lon, body.soc, body.v, body.t, body.ts, body.id]);
         } else {
             // Create new device
-            await sql`
+            await client.query(`
                 INSERT INTO devices (device_id, lat, lon, soc, v, t, ts, created_at, updated_at)
-                VALUES (${body.id}, ${body.lat}, ${body.lon}, ${body.soc}, ${body.v}, ${body.t}, ${body.ts}, NOW(), NOW())
-            `;
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+            `, [body.id, body.lat, body.lon, body.soc, body.v, body.t, body.ts]);
         }
+        
+        await client.end();
         
         console.log('Device stored in database:', body.id);
         return { 

@@ -11,8 +11,23 @@
     <div class="container">
         <div class="sidebar">
             <h2>Devices</h2>
-            <div id="deviceList" class="device-list">
+            <div id="authBox">
+                <p>Please login to view devices.</p>
+                <label>Email</label>
+                <input id="loginEmail" style="width:100%;padding:8px" placeholder="user@example.com">
+                <label>Password</label>
+                <input id="loginPass" type="password" style="width:100%;padding:8px" placeholder="password">
+                <button id="loginBtn">Login</button>
+                <div id="loginMsg" style="margin-top:8px;color:#b00020"></div>
+                <hr/>
+                <p>Admin actions live at <a href="/admin.html">/admin.html</a></p>
+            </div>
+            <div id="deviceList" class="device-list" style="display:none">
                 <p>Loading devices...</p>
+            </div>
+            <div id="userBar" style="display:none;margin-top:10px">
+                <span id="who"></span>
+                <button id="logoutBtn" style="float:right">Logout</button>
             </div>
         </div>
         <div class="map-container">
@@ -20,6 +35,85 @@
         </div>
     </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="script.js"></script>
+    <script>
+    let jwtToken = null;
+
+    const authBox = document.getElementById('authBox');
+    const deviceList = document.getElementById('deviceList');
+    const userBar = document.getElementById('userBar');
+    const who = document.getElementById('who');
+
+    document.getElementById('loginBtn').onclick = async () => {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPass').value;
+        const msg = document.getElementById('loginMsg');
+        msg.textContent='';
+        try{
+            const res = await fetch('/.netlify/functions/auth-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+            const data = await res.json();
+            if(!res.ok){ msg.textContent = data.error || 'Login failed'; return; }
+            jwtToken = data.token;
+            who.textContent = email;
+            authBox.style.display = 'none';
+            deviceList.style.display = 'block';
+            userBar.style.display = 'block';
+            startApp();
+        }catch(e){ msg.textContent = e.message; }
+    };
+    document.getElementById('logoutBtn').onclick = () => {
+        jwtToken = null; location.reload();
+    };
+
+    function authFetch(url){
+        const h = jwtToken ? { 'Authorization': 'Bearer ' + jwtToken } : {};
+        return fetch(url,{ headers: h });
+    }
+
+    // Map init (only after login)
+    let map, markers = {}, cards = {};
+    function initMap(){
+        if(map) return;
+        map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+    }
+
+    async function refresh(){
+        const res = await authFetch('/.netlify/functions/latest');
+        if(!res.ok){ if(res.status===401) { deviceList.innerHTML='<p>Unauthorized</p>'; } return; }
+        const rows = await res.json();
+        deviceList.innerHTML = '';
+        if(!Array.isArray(rows) || !rows.length){ deviceList.innerHTML = '<p>No devices found</p>'; return; }
+        rows.forEach(d => {
+            if(!markers[d.device_id]){
+                markers[d.device_id] = L.marker([d.lat, d.lon])
+                  .addTo(map)
+                  .bindPopup(`${d.device_id}<br>${d.soc||'N/A'}%<br>${d.v||'N/A'} V`);
+                const card = document.createElement('div');
+                card.className='device-card';
+                card.innerHTML = `<h3>${d.device_id}</h3>
+                    <p><strong>SOC:</strong> ${d.soc||'N/A'}%</p>
+                    <p><strong>Voltage:</strong> ${d.v||'N/A'} V</p>
+                    <p><strong>Temp:</strong> ${d.t||'N/A'} °C</p>
+                    <p><strong>Location:</strong> ${d.lat}, ${d.lon}</p>
+                    <p><em>Last Updated: ${new Date((d.ts||Date.now())*1000).toLocaleString()}</em></p>`;
+                card.onclick = () => { map.setView([d.lat, d.lon], 13); markers[d.device_id].openPopup(); };
+                deviceList.appendChild(card); cards[d.device_id]=card;
+            } else {
+                markers[d.device_id].setLatLng([d.lat, d.lon]);
+                const c = cards[d.device_id];
+                if(c){
+                    c.querySelector('p:nth-of-type(1)').innerHTML = `<strong>SOC:</strong> ${d.soc||'N/A'}%`;
+                    c.querySelector('p:nth-of-type(2)').innerHTML = `<strong>Voltage:</strong> ${d.v||'N/A'} V`;
+                    c.querySelector('p:nth-of-type(3)').innerHTML = `<strong>Temp:</strong> ${d.t||'N/A'} °C`;
+                    c.querySelector('p:nth-of-type(4)').innerHTML = `<strong>Location:</strong> ${d.lat}, ${d.lon}`;
+                }
+            }
+        });
+    }
+
+    function startApp(){ initMap(); refresh(); setInterval(refresh, 15000); }
+    </script>
 </body>
 </html>

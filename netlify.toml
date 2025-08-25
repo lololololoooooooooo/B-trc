@@ -1,5 +1,9 @@
 [build]
   functions = "netlify/functions"
+  
+  [build.environment]
+  NPM_FLAGS = "--force"
+
 [functions]
   external_node_modules = ["pg", "bcryptjs", "jsonwebtoken"]
 

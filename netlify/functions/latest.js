@@ -1,6 +1,21 @@
 // netlify/functions/latest.js
 const { Client } = require('pg');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+
+function verifyJWT(authHeader, secret){
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ') || !secret) return null;
+    try {
+        const token = authHeader.slice(7);
+        const [h, p, s] = token.split('.');
+        if (!h || !p || !s) return null;
+        const data = `${h}.${p}`;
+        const expected = crypto.createHmac('sha256', secret).update(data).digest('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+        if (expected !== s) return null;
+        const payload = JSON.parse(Buffer.from(p.replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString());
+        if (payload.exp && payload.exp < Math.floor(Date.now()/1000)) return null;
+        return payload;
+    } catch { return null; }
+}
 
 async function ensureSchema(client) {
     const ddl = `
@@ -46,13 +61,8 @@ exports.handler = async (event) => {
         await client.connect();
         await ensureSchema(client);
 
-        // Try to read JWT (optional)
-        let user = null;
-        const auth = event.headers['authorization'] || '';
-        if (auth.toLowerCase().startsWith('bearer ') && process.env.JWT_SECRET) {
-            const token = auth.slice(7);
-            try { user = jwt.verify(token, process.env.JWT_SECRET); } catch {}
-        }
+        // Optional JWT
+        const user = verifyJWT(event.headers['authorization'] || '', process.env.JWT_SECRET);
 
         let result;
         if (user && user.role === 'admin') {
@@ -70,7 +80,6 @@ exports.handler = async (event) => {
                 ORDER BY d.updated_at DESC
             `, [user.sub]);
         } else {
-            // Unauthenticated: return all (or restrict here if you prefer)
             result = await client.query(`
                 SELECT device_id, lat, lon, soc, v, t, ts, created_at, updated_at
                 FROM devices

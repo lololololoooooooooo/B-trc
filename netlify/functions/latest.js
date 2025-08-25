@@ -1,7 +1,7 @@
 // netlify/functions/latest.js
-import { neon } from '@netlify/neon';
+const { Client } = require('pg');
 
-export const handler = async (event) => {
+exports.handler = async (event) => {
     const cors = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
@@ -14,22 +14,39 @@ export const handler = async (event) => {
     }
     
     try {
-        // Connect to Neon database (automatically uses NETLIFY_DATABASE_URL)
-        const sql = neon();
+        // Check if database URL is available
+        if (!process.env.NETLIFY_DATABASE_URL) {
+            console.error('NETLIFY_DATABASE_URL environment variable not set');
+            return {
+                statusCode: 500,
+                headers: { ...cors, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Database configuration error' }),
+            };
+        }
+        
+        // Connect to PostgreSQL
+        const client = new Client({
+            connectionString: process.env.NETLIFY_DATABASE_URL,
+            ssl: { rejectUnauthorized: false }
+        });
+        
+        await client.connect();
         
         // Query for latest device data
-        const devices = await sql`
+        const result = await client.query(`
             SELECT device_id, lat, lon, soc, v, t, ts, 
                    created_at, updated_at
             FROM devices 
             ORDER BY updated_at DESC
-        `;
+        `);
         
-        console.log('Returning', devices.length, 'devices from database');
+        await client.end();
+        
+        console.log('Returning', result.rows.length, 'devices from database');
         return {
             statusCode: 200,
             headers: { ...cors, 'Content-Type': 'application/json' },
-            body: JSON.stringify(devices),
+            body: JSON.stringify(result.rows),
         };
         
     } catch (error) {

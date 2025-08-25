@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <title>Admin | IoT Battery Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px}
     fieldset{margin-bottom:18px;padding:12px}
@@ -16,6 +17,7 @@
     .ok{color:#2e7d32}.err{color:#b00020}
     textarea{height:84px}
     nav a{margin-right:12px}
+    #miniMap{height:360px;border:1px solid #ddd;border-radius:8px;margin-top:12px}
   </style>
 </head>
 <body>
@@ -25,7 +27,10 @@
     <a href="/admin.html">Admin</a>
   </nav>
   <h1>Admin</h1>
-  <p>Use your <code>ADMIN_TOKEN</code> for admin APIs. Use <code>auth-login</code> to get a user JWT.</p>
+  <p>
+    Provisioning actions (create user, assign device) use <code>ADMIN_TOKEN</code>.
+    User login below is with the email/password you create for users.
+  </p>
 
   <div class="row">
     <div class="card">
@@ -85,6 +90,10 @@
     </div>
   </div>
 
+  <h3>Devices overview</h3>
+  <div id="miniMap"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     async function login(){
       const email = document.getElementById('loginEmail').value.trim();
@@ -144,8 +153,33 @@
         if(!res.ok){ msg.innerHTML = '<span class="err">'+(data.error||'Error')+'</span>'; return; }
         document.getElementById('psCmd').value = data.powershell || '';
         msg.innerHTML = '<span class="ok">Device ready: '+data.device_id+'</span>';
+        // refresh map
+        loadMap();
       }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
     }
+
+    // Map: show all devices
+    let map, markers=[];
+    async function loadMap(){
+      try{
+        const res = await fetch('/.netlify/functions/latest');
+        const rows = await res.json();
+        if(!map){
+          map = L.map('miniMap').setView([20,0],2);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+        }
+        markers.forEach(m=>map.removeLayer(m)); markers=[];
+        const bounds = [];
+        rows.forEach(d=>{
+          if(d.lat!=null && d.lon!=null){
+            const m = L.marker([d.lat, d.lon]).addTo(map).bindPopup(`${d.device_id}`);
+            markers.push(m); bounds.push([d.lat, d.lon]);
+          }
+        });
+        if(bounds.length){ map.fitBounds(bounds, { padding:[20,20] }); }
+      }catch(e){ console.error(e); }
+    }
+    loadMap();
   </script>
 </body>
 </html>

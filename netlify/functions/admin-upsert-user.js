@@ -1,6 +1,15 @@
 // netlify/functions/admin-upsert-user.js
 const { Client } = require('pg');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+
+async function hashPassword(password) {
+    const salt = crypto.randomBytes(16);
+    const hash = await new Promise((resolve, reject) => {
+        crypto.scrypt(password, salt, 32, (err, dk) => err ? reject(err) : resolve(dk));
+    });
+    // format: s1:<hexSalt>:<hexHash>
+    return `s1:${salt.toString('hex')}:${hash.toString('hex')}`;
+}
 
 exports.handler = async (event) => {
     const cors = {
@@ -28,7 +37,7 @@ exports.handler = async (event) => {
         if (!email || !password) {
             return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'email and password required' }) };
         }
-        const password_hash = await bcrypt.hash(password, 10);
+        const password_hash = await hashPassword(password);
 
         const client = new Client({ connectionString: process.env.NETLIFY_DATABASE_URL, ssl: { rejectUnauthorized: false } });
         await client.connect();

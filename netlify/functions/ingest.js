@@ -1,5 +1,10 @@
 // netlify/functions/ingest.js
 const { Client } = require('pg');
+const crypto = require('crypto');
+
+function hashSecret(secret, deviceId){
+    return 's1:' + crypto.createHmac('sha256', deviceId).update(secret).digest('hex');
+}
 
 async function ensureSchema(client) {
     // Ensure base table exists
@@ -61,108 +66,78 @@ exports.handler = async (event) => {
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
     };
     
-    // CORS pre-flight
     if (event.httpMethod === 'OPTIONS')
         return { statusCode: 200, headers: cors, body: '' };
     
-    // Check if required environment variables are set
-    if (!process.env.DEVICE_TOKEN) {
-        console.error('DEVICE_TOKEN environment variable not set');
-        return { 
-            statusCode: 500, 
-            headers: cors, 
-            body: JSON.stringify({ error: 'Server configuration error' }) 
-        };
-    }
-    
     if (!process.env.NETLIFY_DATABASE_URL) {
         console.error('NETLIFY_DATABASE_URL environment variable not set');
-        return { 
-            statusCode: 500, 
-            headers: cors, 
-            body: JSON.stringify({ error: 'Database configuration error' }) 
-        };
+        return { statusCode: 500, headers: cors, body: JSON.stringify({ error: 'Database configuration error' }) };
     }
-    
-    // Token check
-    const token = (event.headers['x-device-token'] || '').trim();
-    if (token !== process.env.DEVICE_TOKEN.trim())
-        return { 
-            statusCode: 401, 
-            headers: cors, 
-            body: JSON.stringify({ error: 'Unauthorized' }) 
-        };
-    
-    // Parse body
+
+    // Parse body early to know device id for per-device token check
     let body;
-    try { 
-        body = JSON.parse(event.body || '{}'); 
-    } catch { 
-        return { 
-            statusCode: 400, 
-            headers: cors, 
-            body: JSON.stringify({ error: 'Bad JSON' }) 
-        }; 
-    }
-    
-    // Validate required fields
+    try { body = JSON.parse(event.body || '{}'); }
+    catch { return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Bad JSON' }) }; }
+
     if (!body.id || body.lat === undefined || body.lon === undefined) {
-        return { 
-            statusCode: 400, 
-            headers: cors, 
-            body: JSON.stringify({ error: 'Fields required: id, lat, lon' }) 
-        };
+        return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Fields required: id, lat, lon' }) };
     }
-    
-    // Add timestamp if missing (unix seconds)
-    if (!body.ts) body.ts = Math.floor(Date.now() / 1000);
-    
+
+    const headerToken = (event.headers['x-device-token'] || '').trim();
+
     try {
-        // Connect to PostgreSQL
-        const client = new Client({
-            connectionString: process.env.NETLIFY_DATABASE_URL,
-            ssl: { rejectUnauthorized: false }
-        });
-        
+        const client = new Client({ connectionString: process.env.NETLIFY_DATABASE_URL, ssl: { rejectUnauthorized: false } });
         await client.connect();
         await ensureSchema(client);
-        
-        // Check if device exists and update or create
-        const checkResult = await client.query(
-            'SELECT id FROM devices WHERE device_id = $1',
-            [body.id]
-        );
-        
+
+        // Per-device secret: if device exists and has api_token_hash, enforce it
+        let requirePerDevice = false;
+        let deviceRow = null;
+        const existing = await client.query('SELECT api_token_hash FROM devices WHERE device_id = $1', [body.id]);
+        if (existing.rows.length > 0) {
+            deviceRow = existing.rows[0];
+            if (deviceRow.api_token_hash) requirePerDevice = true;
+        }
+
+        if (requirePerDevice) {
+            if (!headerToken) {
+                await client.end();
+                return { statusCode: 401, headers: cors, body: JSON.stringify({ error: 'Unauthorized' }) };
+            }
+            const hashed = hashSecret(headerToken, body.id);
+            if (hashed !== deviceRow.api_token_hash) {
+                await client.end();
+                return { statusCode: 401, headers: cors, body: JSON.stringify({ error: 'Unauthorized' }) };
+            }
+        } else {
+            // Fallback to global token
+            if (!process.env.DEVICE_TOKEN || headerToken !== process.env.DEVICE_TOKEN.trim()) {
+                await client.end();
+                return { statusCode: 401, headers: cors, body: JSON.stringify({ error: 'Unauthorized' }) };
+            }
+        }
+
+        if (!body.ts) body.ts = Math.floor(Date.now() / 1000);
+
+        const checkResult = await client.query('SELECT id FROM devices WHERE device_id = $1', [body.id]);
         if (checkResult.rows.length > 0) {
-            // Update existing device
             await client.query(`
                 UPDATE devices 
                 SET lat = $1, lon = $2, soc = $3, v = $4, t = $5, ts = $6, updated_at = NOW()
                 WHERE device_id = $7
             `, [body.lat, body.lon, body.soc ?? null, body.v ?? null, body.t ?? null, body.ts, body.id]);
         } else {
-            // Create new device
             await client.query(`
                 INSERT INTO devices (device_id, lat, lon, soc, v, t, ts, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
             `, [body.id, body.lat, body.lon, body.soc ?? null, body.v ?? null, body.t ?? null, body.ts]);
         }
-        
+
         await client.end();
-        
-        console.log('Device stored in database:', body.id);
-        return { 
-            statusCode: 200, 
-            headers: cors, 
-            body: JSON.stringify({ success: true, message: 'Device data stored successfully' }) 
-        };
-        
+        return { statusCode: 200, headers: cors, body: JSON.stringify({ success: true, message: 'Device data stored successfully' }) };
+
     } catch (error) {
         console.error('Database error:', error);
-        return { 
-            statusCode: 200, 
-            headers: cors, 
-            body: JSON.stringify({ error: 'Database error', details: error.message }) 
-        };
+        return { statusCode: 200, headers: cors, body: JSON.stringify({ error: 'Database error', details: error.message }) };
     }
 };

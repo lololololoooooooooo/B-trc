@@ -5,6 +5,6 @@
   NPM_FLAGS = "--force"
 
 [functions]
-  external_node_modules = ["pg", "bcryptjs", "jsonwebtoken"]
+  node_bundler = "esbuild"
 
 

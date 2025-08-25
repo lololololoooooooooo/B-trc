@@ -56,7 +56,9 @@
       <label>Role</label>
       <input id="uRole" placeholder="member or admin"/>
       <button onclick="upsertUser()">Save User</button>
+      <button onclick="createDefaultAdmin()" style="margin-left:6px">Quick: Create default admin</button>
       <div id="upsertMsg"></div>
+      <p style="font-size:.9rem;color:#555">Default admin creds used by this button: <code>admin@123</code> / <code>asd123</code></p>
     </div>
 
     <div class="card">
@@ -133,6 +135,23 @@
         const data = await res.json();
         if(!res.ok){ msg.innerHTML = '<span class="err">'+(data.error||'Error')+'</span>'; return; }
         msg.innerHTML = '<span class="ok">Saved '+data.user.email+'</span>';
+      }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
+    }
+    async function createDefaultAdmin(){
+      const token = document.getElementById('admTok').value.trim();
+      const email = 'admin@123';
+      const password = 'asd123';
+      const role = 'admin';
+      const msg = document.getElementById('upsertMsg');
+      msg.textContent = '';
+      try{
+        const res = await fetch('/.netlify/functions/admin-upsert-user',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':token},body:JSON.stringify({email,password,role})});
+        const data = await res.json();
+        if(!res.ok){ msg.innerHTML = '<span class="err">'+(data.error||'Error')+'</span>'; return; }
+        msg.innerHTML = '<span class="ok">Default admin created</span>';
+        // Prefill login box for convenience
+        document.getElementById('loginEmail').value = email;
+        document.getElementById('loginPass').value = password;
       }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
     }
     async function assignDevice(){

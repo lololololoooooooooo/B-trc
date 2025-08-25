@@ -28,6 +28,7 @@
     .device-card h4{margin:0 0 4px}
     .device-card p{margin:2px 0;font-size:.85rem}
     .highlight{background:#e6ffe6;border-color:#2e7d32}
+    .error-message{color:red;font-weight:bold}
   </style>
 </head>
 <body>
@@ -50,48 +51,81 @@
     const cards   = {};          // device_id → card DOM node
 
     async function refresh() {
-      const res  = await fetch('/.netlify/functions/latest');
-      const rows = await res.json();          // newest first
-      const list = document.getElementById('deviceList');
-      list.innerHTML = '';                   // clear old list
-
-      rows.forEach(r => {
-        const d = r.data || r;               // handle both KV & Fauna shapes
-        if (!markers[d.device_id]) {
-          // create marker
-          markers[d.device_id] = L.marker([d.lat, d.lon])
-            .addTo(map)
-            .bindPopup(`${d.device_id}<br>${d.soc}%<br>${d.v} V`);
-          // create card
-          const card = document.createElement('div');
-          card.className = 'device-card';
-          card.id        = `card-${d.device_id}`;
-          card.innerHTML = `
-            <h4>${d.device_id}</h4>
-            <p><strong>SOC:</strong> ${d.soc}%</p>
-            <p><strong>Voltage:</strong> ${d.v} V</p>
-            <p><strong>Temp:</strong> ${d.t} °C</p>
-            <p><em>Last seen: ${new Date(d.ts*1000).toLocaleTimeString()}</em></p>
-          `;
-          card.onclick = () => {
-            map.setView([d.lat, d.lon], 13);
-            markers[d.device_id].openPopup();
-            // highlight card
-            Object.values(cards).forEach(c => c.classList.remove('highlight'));
-            card.classList.add('highlight');
-          };
-          list.appendChild(card);
-          cards[d.device_id] = card;
-        } else {
-          // update marker & card
-          markers[d.device_id].setLatLng([d.lat, d.lon]);
-          const c = cards[d.device_id];
-          c.querySelector('p:nth-of-type(1)').textContent = `SOC: ${d.soc}%`;
-          c.querySelector('p:nth-of-type(2)').textContent = `Voltage: ${d.v} V`;
-          c.querySelector('p:nth-of-type(3)').textContent = `Temp: ${d.t} °C`;
-          c.querySelector('em').textContent = `Last seen: ${new Date(d.ts*1000).toLocaleTimeString()}`;
+      try {
+        const res = await fetch('/.netlify/functions/latest');
+        
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
         }
-      });
+        
+        const rows = await res.json();          // newest first
+        const list = document.getElementById('deviceList');
+        list.innerHTML = '';                   // clear old list
+
+        // Clear old markers
+        Object.values(markers).forEach(marker => map.removeLayer(marker));
+        Object.keys(markers).forEach(key => delete markers[key]);
+        Object.keys(cards).forEach(key => delete cards[key]);
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+          list.innerHTML = '<p>No devices found</p>';
+          return;
+        }
+
+        rows.forEach(r => {
+          const d = r.data || r;               // handle both KV & Fauna shapes
+          
+          // Ensure required fields exist
+          if (!d.device_id || !d.lat || !d.lon) {
+            console.warn('Device missing required fields:', d);
+            return;
+          }
+          
+          if (!markers[d.device_id]) {
+            // create marker
+            markers[d.device_id] = L.marker([d.lat, d.lon])
+              .addTo(map)
+              .bindPopup(`${d.device_id}<br>${d.soc || 'N/A'}%<br>${d.v || 'N/A'} V`);
+            // create card
+            const card = document.createElement('div');
+            card.className = 'device-card';
+            card.id        = `card-${d.device_id}`;
+            card.innerHTML = `
+              <h4>${d.device_id}</h4>
+              <p><strong>SOC:</strong> ${d.soc || 'N/A'}%</p>
+              <p><strong>Voltage:</strong> ${d.v || 'N/A'} V</p>
+              <p><strong>Temp:</strong> ${d.t || 'N/A'} °C</p>
+              <p><em>Last seen: ${new Date((d.ts || Date.now()) * 1000).toLocaleTimeString()}</em></p>
+            `;
+            card.onclick = () => {
+              map.setView([d.lat, d.lon], 13);
+              markers[d.device_id].openPopup();
+              // highlight card
+              Object.values(cards).forEach(c => c.classList.remove('highlight'));
+              card.classList.add('highlight');
+            };
+            list.appendChild(card);
+            cards[d.device_id] = card;
+          } else {
+            // update marker & card
+            markers[d.device_id].setLatLng([d.lat, d.lon]);
+            const c = cards[d.device_id];
+            if (c) {
+              c.querySelector('p:nth-of-type(1)').textContent = `SOC: ${d.soc || 'N/A'}%`;
+              c.querySelector('p:nth-of-type(2)').textContent = `Voltage: ${d.v || 'N/A'} V`;
+              c.querySelector('p:nth-of-type(3)').textContent = `Temp: ${d.t || 'N/A'} °C`;
+              c.querySelector('em').textContent = `Last seen: ${new Date((d.ts || Date.now()) * 1000).toLocaleTimeString()}`;
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error refreshing devices:', error);
+        const list = document.getElementById('deviceList');
+        list.innerHTML = `<p class="error-message">Error loading devices: ${error.message}</p>`;
+        
+        // Retry after 5 seconds
+        setTimeout(refresh, 5000);
+      }
     }
 
     refresh();

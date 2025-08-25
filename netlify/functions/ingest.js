@@ -12,17 +12,53 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'OPTIONS')
         return { statusCode: 200, headers: cors, body: '' };
     
+    // Check if required environment variables are set
+    if (!process.env.DEVICE_TOKEN) {
+        console.error('DEVICE_TOKEN environment variable not set');
+        return { 
+            statusCode: 500, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Server configuration error' }) 
+        };
+    }
+    
+    if (!process.env.FAUNA_SECRET) {
+        console.error('FAUNA_SECRET environment variable not set');
+        return { 
+            statusCode: 500, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Database configuration error' }) 
+        };
+    }
+    
     // Token check
     const token = (event.headers['x-device-token'] || '').trim();
-    if (token !== (process.env.DEVICE_TOKEN || '').trim())
-        return { statusCode: 401, headers: cors, body: 'Unauthorized' };
+    if (token !== process.env.DEVICE_TOKEN.trim())
+        return { 
+            statusCode: 401, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Unauthorized' }) 
+        };
     
     // Parse body
     let body;
     try { 
         body = JSON.parse(event.body || '{}'); 
     } catch { 
-        return { statusCode: 400, headers: cors, body: 'Bad JSON' }; 
+        return { 
+            statusCode: 400, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Bad JSON' }) 
+        }; 
+    }
+    
+    // Validate required fields
+    if (!body.id) {
+        return { 
+            statusCode: 400, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Device ID is required' }) 
+        };
     }
     
     // Add timestamp if missing
@@ -72,10 +108,18 @@ exports.handler = async (event) => {
         );
         
         console.log('Device stored in database:', body.id);
-        return { statusCode: 200, headers: cors, body: 'OK' };
+        return { 
+            statusCode: 200, 
+            headers: cors, 
+            body: JSON.stringify({ success: true, message: 'Device data stored successfully' }) 
+        };
         
     } catch (error) {
         console.error('Database error:', error);
-        return { statusCode: 500, headers: cors, body: 'Database error' };
+        return { 
+            statusCode: 500, 
+            headers: cors, 
+            body: JSON.stringify({ error: 'Database error', details: error.message }) 
+        };
     }
 };

@@ -88,6 +88,19 @@
       <p>PowerShell one‑liner:</p>
       <textarea id="psCmd" readonly></textarea>
     </div>
+
+    <div class="card">
+      <h3>Per-device Secret (ID + password)</h3>
+      <label>Admin Token</label>
+      <input id="admTok4" placeholder="ADMIN_TOKEN"/>
+      <label>Device ID</label>
+      <input id="sDev" placeholder="batt-001"/>
+      <label>Secret (optional, leave blank to auto-generate)</label>
+      <input id="sSecret" placeholder="auto-generate"/>
+      <button onclick="setSecret()">Set secret</button>
+      <div id="secretMsg"></div>
+      <p>Provide this secret to the device. Then send it in header <code>X-Device-Token</code> with that device’s ID.</p>
+    </div>
   </div>
 
   <h3>Devices overview</h3>
@@ -155,6 +168,21 @@
         msg.innerHTML = '<span class="ok">Device ready: '+data.device_id+'</span>';
         // refresh map
         loadMap();
+      }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
+    }
+
+    async function setSecret(){
+      const token = document.getElementById('admTok4').value.trim();
+      const device_id = document.getElementById('sDev').value.trim();
+      const secret = document.getElementById('sSecret').value.trim();
+      const msg = document.getElementById('secretMsg');
+      msg.textContent = '';
+      try{
+        const body = { device_id }; if(secret) body.secret = secret;
+        const res = await fetch('/.netlify/functions/admin-set-device-secret',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Token':token},body:JSON.stringify(body)});
+        const data = await res.json();
+        if(!res.ok){ msg.innerHTML = '<span class="err">'+(data.error||'Error')+'</span>'; return; }
+        msg.innerHTML = '<span class="ok">Secret set. New secret: '+data.secret+'</span>';
       }catch(e){ msg.innerHTML = '<span class="err">'+e.message+'</span>'; }
     }
 
